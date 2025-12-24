@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "astro-core"
+version = "0.1.0"
+description = "Force of Lumos astro calculation core (Swiss Ephemeris + helpers)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "astronomy-engine==2.*",
+  "pyswisseph>=2.10",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["astro_core*"]
