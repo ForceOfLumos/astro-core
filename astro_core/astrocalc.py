@@ -412,6 +412,19 @@ def compute_houses(dt_utc: datetime, lat: float, lon: float, hsys: str = "P") ->
         hs = hs.encode("ascii")
     cusps, ascmc = swe.houses_ex(jd_ut, lat, lon, hs)
 
+    # pyswisseph can return cusps indexed 1..12 (length 13) or 0..11 (length 12)
+    cusps_list = list(cusps)
+
+    if len(cusps_list) >= 13:
+        # 1..12 valid
+        houses = [float(cusps_list[i]) % 360.0 for i in range(1, 13)]
+    elif len(cusps_list) == 12:
+        # 0..11 valid
+        houses = [float(c) % 360.0 for c in cusps_list]
+    else:
+        raise RuntimeError(f"Unexpected cusps length from swe.houses_ex: {len(cusps_list)}")
+
+
 
     # Normalize cusps to [0, 360)
     houses = [float(cusps[i]) % 360.0 for i in range(1, 13)]
