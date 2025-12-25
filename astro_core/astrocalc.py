@@ -6,6 +6,7 @@ from typing import Union, Tuple, List
 
 import swisseph as swe
 from astronomy import Time, Body, GeoVector, Ecliptic
+from typing import Dict
 
 
 # --- Swiss Ephemeris init ---
@@ -31,6 +32,24 @@ EXTRA_SYMBOL = {
     "chiron": "⚷",
     "lilith_mean": "⚸",
     "lilith_true": "⚸",
+}
+
+# --- House system symbols / labels ---
+HOUSE_SYS_LABEL = {
+    "P": "Placidus",
+    "W": "Whole Sign",
+    "K": "Koch",
+    "R": "Regiomontanus",
+    "C": "Campanus",
+    "E": "Equal",
+}
+
+ANGLE_SYMBOL = {
+    "ASC": "ASC",
+    "MC": "MC",
+    "DC": "DC",
+    "IC": "IC",
+    "VX": "VX",     # Vertex
 }
 
 # Map Astronomy Engine bodies to symbols (adjust if you already have a mapping you like)
@@ -74,6 +93,15 @@ def parse_body_key(s: str) -> BodyKey | None:
         return EXTRA_BODIES[s]
 
     return None
+    
+def aspect_delta_deg(transit_body: Body, natal_lon: float, aspect_angle: float, at_utc: datetime) -> float:
+    """
+    Signed delta in degrees between transit longitude and (natal_lon + aspect_angle).
+    Returns value in (-180, 180].
+    """
+    transit_lon = ecliptic_lon_geocentric(transit_body, at_utc)
+    target = (natal_lon + aspect_angle) % 360.0
+    return angle_diff_signed(transit_lon, target)
 
 
 def ps_any(body_or_key: BodyKey) -> str:
@@ -163,3 +191,277 @@ def ecliptic_lon_geocentric(body_or_key: BodyKey, dt_utc: datetime) -> float:
 
     xx, _ret = swe.calc_ut(jd, ipl, swe.FLG_SWIEPH)
     return float(xx[0]) % 360.0
+    
+    
+def find_next_aspect_times(
+    body_transit: Body,
+    natal_lon: float,
+    aspect_angle: float,
+    start_utc: datetime,
+    days_ahead: int = 365 * 2,
+    step_hours: int = 12,
+    max_hits: int = 3
+) -> list[datetime]:
+    """
+    Finds next times where transit body forms aspect_angle to natal_lon.
+    For conjunction: aspect_angle=0.
+
+    Method:
+    - scan forward in fixed steps
+    - find sign changes of delta(t) around 0
+    - refine each bracket by bisection
+    """
+    def delta(dt: datetime) -> float:
+        lon_t = ecliptic_lon_geocentric(body_transit, dt)
+        # We want (lon_t - natal_lon) == aspect_angle (mod 360)
+        # So compare lon_t to natal_lon+aspect_angle
+        target = (natal_lon + aspect_angle) % 360.0
+        return angle_diff_signed(lon_t, target)
+
+    hits: list[datetime] = []
+    dt1 = start_utc
+    d1 = delta(dt1)
+
+    steps = int((days_ahead * 24) / step_hours)
+    for _ in range(steps):
+        dt2 = dt1 + timedelta(hours=step_hours)
+        d2 = delta(dt2)
+
+        # bracket condition: sign flip OR exactly 0 at an endpoint
+        wrap_jump = abs(d2 - d1) > 180.0
+        crosses_zero = (d1 == 0.0 or d2 == 0.0 or (d1 < 0 < d2) or (d2 < 0 < d1))
+
+        if crosses_zero or wrap_jump:
+
+            # bisection refine
+            lo, hi = dt1, dt2
+            dlo, dhi = d1, d2
+
+            # ensure we have opposite signs; if one is 0, accept it directly
+            if abs(dlo) < 1e-9:
+                t_hit = lo
+            elif abs(dhi) < 1e-9:
+                t_hit = hi
+            else:
+                for _ in range(50):  # enough for < 1 minute precision
+                    mid = lo + (hi - lo) / 2
+                    dm = delta(mid)
+                    if abs(dm) < 1e-6:
+                        lo = hi = mid
+                        break
+                    # keep the sub-interval that contains sign change
+                    if (dlo < 0 < dm) or (dm < 0 < dlo):
+                        hi, dhi = mid, dm
+                    else:
+                        lo, dlo = mid, dm
+                t_hit = lo + (hi - lo) / 2
+
+            # de-dup (retro loops can give close hits if step is coarse)
+            if not hits or abs((t_hit - hits[-1]).total_seconds()) > step_hours * 3600:
+                hits.append(t_hit)
+
+            if len(hits) >= max_hits:
+                break
+
+        dt1, d1 = dt2, d2
+
+    return hits
+
+def find_orb_window(
+    transit_body: Body,
+    natal_lon: float,
+    aspect_angle: float,
+    start_utc: datetime,
+    days_ahead: int,
+    step_hours: int,
+    orb_deg: float,
+) -> tuple[datetime, datetime, datetime] | None:
+    """
+    Returns (enter_time, exact_time, exit_time) within search horizon.
+    """
+    end_utc = start_utc + timedelta(days=days_ahead)
+
+    # 1) Find first entry into orb
+    t_prev = start_utc
+    prev_in = abs(aspect_delta_deg(transit_body, natal_lon, aspect_angle, t_prev)) <= orb_deg
+
+    t = t_prev
+    enter = None
+
+    while t < end_utc:
+        t = t + timedelta(hours=step_hours)
+        now_in = abs(aspect_delta_deg(transit_body, natal_lon, aspect_angle, t)) <= orb_deg
+
+        if (not prev_in) and now_in:
+            # bracket [t_prev, t]
+            enter = _bisect_boundary(transit_body, natal_lon, aspect_angle, orb_deg, t_prev, t, want_enter=True)
+            break
+
+        t_prev, prev_in = t, now_in
+
+    if enter is None:
+        return None
+
+    # 2) Find exact inside the orb window (use your existing exact finder with a finer step)
+    exact_hits = find_next_aspect_times(
+        body_transit=transit_body,
+        natal_lon=natal_lon,
+        aspect_angle=aspect_angle,
+        start_utc=start_utc,
+        days_ahead=days_ahead,
+        step_hours=step_hours,
+        max_hits=3,
+    )
+    if not exact_hits:
+        # fallback: pick minimum abs(delta) by scanning, if no root found (rare)
+        best_t = enter
+        best_v = abs(aspect_delta_deg(transit_body, natal_lon, aspect_angle, best_t))
+        scan_step = timedelta(hours=max(1, step_hours // 3))
+        tscan = enter
+        for _ in range(int((days_ahead * 24) / max(1, step_hours // 3))):
+            v = abs(aspect_delta_deg(transit_body, natal_lon, aspect_angle, tscan))
+            if v < best_v:
+                best_v, best_t = v, tscan
+            if v > orb_deg and tscan > enter + timedelta(days=10):
+                break
+            tscan += scan_step
+        exact = best_t
+    else:
+        exact = exact_hits[0]
+
+    # 3) Find exit from orb (start scanning from exact)
+    t_prev = exact
+    prev_in = abs(aspect_delta_deg(transit_body, natal_lon, aspect_angle, t_prev)) <= orb_deg
+
+    t = t_prev
+    exit_t = None
+
+    while t < end_utc:
+        t = t + timedelta(hours=step_hours)
+        now_in = abs(aspect_delta_deg(transit_body, natal_lon, aspect_angle, t)) <= orb_deg
+
+        if prev_in and (not now_in):
+            exit_t = _bisect_boundary(transit_body, natal_lon, aspect_angle, orb_deg, t_prev, t, want_enter=False)
+            break
+
+        t_prev, prev_in = t, now_in
+
+    if exit_t is None:
+        exit_t = end_utc
+
+    return enter, exact, exit_t
+
+def default_search_params(transit_body) -> tuple[int, int]:
+    """
+    Returns (days_ahead, step_hours) tuned by transit body speed.
+    days_ahead in days, step_hours in hours.
+    Supports Astronomy Engine Body and also string keys like 'chiron', 'lilith_mean'.
+    """
+    # Extras (Swiss) sind i.d.R. langsam -> große Horizonte, grober Schritt
+    if isinstance(transit_body, str):
+        return (365 * 90, 48)
+
+    # Astronomy Engine bodies
+    if transit_body == Body.Moon:
+        return (365 * 5, 1)          # Mond: schnell, aber braucht keine 90 Jahre
+    if transit_body in (Body.Mercury, Body.Venus):
+        return (365 * 10, 3)
+    if transit_body == Body.Mars:
+        return (365 * 15, 6)
+    if transit_body == Body.Jupiter:
+        return (365 * 60, 24)
+    if transit_body == Body.Saturn:
+        return (365 * 90, 24)
+    if transit_body in (Body.Uranus, Body.Neptune, Body.Pluto):
+        return (365 * 90, 48)
+
+    # Default
+    return (365 * 90, 24)
+
+def angle_diff_signed(a: float, b: float) -> float:
+    """
+    Signed smallest difference a-b in degrees, range (-180, 180].
+    """
+    d = (a - b + 180.0) % 360.0 - 180.0
+    return d
+
+def compute_houses(dt_utc: datetime, lat: float, lon: float, hsys: str = "P") -> tuple[list[float], dict[str, float]]:
+    """
+    Returns:
+      houses: list of 12 house cusps in degrees (1..12) as list[0..11]
+      angles: dict with ASC/MC/DC/IC (+ optional others)
+    Notes:
+      - dt_utc must be timezone-aware (UTC)
+      - lon: East positive (Swiss Ephemeris expects geographic longitude, east positive)
+    """
+    if dt_utc.tzinfo is None:
+        raise ValueError("dt_utc must be timezone-aware (UTC).")
+    dt_utc = dt_utc.astimezone(timezone.utc)
+
+    jd_ut = swe.julday(
+        dt_utc.year,
+        dt_utc.month,
+        dt_utc.day,
+        dt_utc.hour + dt_utc.minute / 60.0 + dt_utc.second / 3600.0 + dt_utc.microsecond / 3_600_000_000.0,
+    )
+
+    # houses_ex: returns (cusps[1..12], ascmc[0..]) in many wrappers.
+    cusps, ascmc = swe.houses_ex(jd_ut, lat, lon, hsys)
+
+    # Normalize cusps to [0, 360)
+    houses = [float(cusps[i]) % 360.0 for i in range(1, 13)]
+
+    asc = float(ascmc[0]) % 360.0
+    mc  = float(ascmc[1]) % 360.0
+    # Derive DC/IC (opposition)
+    dc  = (asc + 180.0) % 360.0
+    ic  = (mc  + 180.0) % 360.0
+
+    angles = {
+        "ASC": asc,
+        "MC": mc,
+        "DC": dc,
+        "IC": ic,
+    }
+
+    # Optional: Vertex is often at index 3 in SwissEph ascmc array (depends on wrapper),
+    # but we keep it safe:
+    try:
+        vx = float(ascmc[3]) % 360.0
+        angles["VX"] = vx
+    except Exception:
+        pass
+
+    return houses, angles
+
+
+def house_of_lon(lon: float, houses: list[float]) -> int:
+    """
+    Determine house number (1..12) for a given ecliptic longitude, based on cusps.
+    Works with cusps crossing 0°.
+    """
+    lon = lon % 360.0
+    for i in range(12):
+        start = houses[i]
+        end = houses[(i + 1) % 12]
+        if start <= end:
+            if start <= lon < end:
+                return i + 1
+        else:
+            # wrap around 360->0
+            if lon >= start or lon < end:
+                return i + 1
+    return 12
+
+
+def fmt_cusp(i: int, lon: float) -> str:
+    # i: 1..12
+    return f"H{i:02d}: {fmt_lon_sign(lon)}"
+
+
+def fmt_angles(angles: dict[str, float]) -> str:
+    parts = []
+    for k in ("ASC", "MC", "DC", "IC", "VX"):
+        if k in angles:
+            parts.append(f"{ANGLE_SYMBOL.get(k,k)}: {fmt_lon_sign(angles[k])}")
+    return "\n".join(parts)

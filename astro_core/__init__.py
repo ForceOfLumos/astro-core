@@ -5,6 +5,9 @@ from .astrocalc import (
     name_any,
     fmt_lon_sign,
     lon_to_sign,
+    compute_houses,
+    house_of_lon,
+    fmt_angles,
 )
 
 from .aspects import (
@@ -25,4 +28,7 @@ __all__ = [
     "find_next_aspect_times",
     "default_search_params",
     "angle_diff_signed",
+    "compute_houses",
+    "house_of_lon",
+    "fmt_angles",
 ]
