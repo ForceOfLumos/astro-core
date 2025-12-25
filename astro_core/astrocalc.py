@@ -406,7 +406,12 @@ def compute_houses(dt_utc: datetime, lat: float, lon: float, hsys: str = "P") ->
     )
 
     # houses_ex: returns (cusps[1..12], ascmc[0..]) in many wrappers.
-    cusps, ascmc = swe.houses_ex(jd_ut, lat, lon, hsys)
+    hs = (hsys or "P")
+    hs = hs[0].upper() if isinstance(hs, str) else hs
+    if isinstance(hs, str):
+        hs = hs.encode("ascii")
+    cusps, ascmc = swe.houses_ex(jd_ut, lat, lon, hs)
+
 
     # Normalize cusps to [0, 360)
     houses = [float(cusps[i]) % 360.0 for i in range(1, 13)]
