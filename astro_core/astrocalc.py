@@ -425,10 +425,6 @@ def compute_houses(dt_utc: datetime, lat: float, lon: float, hsys: str = "P") ->
         raise RuntimeError(f"Unexpected cusps length from swe.houses_ex: {len(cusps_list)}")
 
 
-
-    # Normalize cusps to [0, 360)
-    houses = [float(cusps[i]) % 360.0 for i in range(1, 13)]
-
     asc = float(ascmc[0]) % 360.0
     mc  = float(ascmc[1]) % 360.0
     # Derive DC/IC (opposition)
