@@ -8,6 +8,7 @@ from .astrocalc import (
     compute_houses,
     house_of_lon,
     fmt_angles,
+    find_new_full_moons,
 )
 
 from .aspects import (
@@ -31,4 +32,5 @@ __all__ = [
     "compute_houses",
     "house_of_lon",
     "fmt_angles",
+    "find_new_full_moons",
 ]
