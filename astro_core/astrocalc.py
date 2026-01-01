@@ -69,6 +69,97 @@ PLANET_SYMBOL = {
 
 BodyKey = Union[Body, str]
 
+def wrap180(x: float) -> float:
+    return (x + 180.0) % 360.0 - 180.0
+
+def _swe_lon(body_ipl: int, dt_utc: datetime) -> float:
+    jd = _jd_ut(dt_utc)
+    xx, _ret = swe.calc_ut(jd, body_ipl, swe.FLG_SWIEPH)
+    return float(xx[0]) % 360.0
+
+def moon_phase_func(dt_utc: datetime, target_deg: float) -> float:
+    """
+    f(t) = wrap180( (lon_moon - lon_sun) - target_deg )
+    Root bei f(t)=0.
+    """
+    moon = _swe_lon(swe.MOON, dt_utc)
+    sun  = _swe_lon(swe.SUN, dt_utc)
+    return wrap180((moon - sun) - target_deg)
+
+def bisect_time_for_moon_phase(
+    t0: datetime,
+    t1: datetime,
+    target_deg: float,
+    tol_seconds: int = 60,
+) -> datetime:
+    f0 = moon_phase_func(t0, target_deg)
+    f1 = moon_phase_func(t1, target_deg)
+
+    if abs(f0) < 1e-12:
+        return t0
+    if abs(f1) < 1e-12:
+        return t1
+
+    # muss ein Vorzeichenwechsel sein, sonst keine sichere Bisection
+    if f0 * f1 > 0:
+        raise ValueError("No sign change for moon phase bisection.")
+
+    lo, hi = t0, t1
+    while (hi - lo).total_seconds() > tol_seconds:
+        mid = lo + (hi - lo) / 2
+        fm = moon_phase_func(mid, target_deg)
+        if abs(fm) < 1e-10:
+            return mid
+        if f0 * fm <= 0:
+            hi = mid
+            f1 = fm
+        else:
+            lo = mid
+            f0 = fm
+
+    return lo + (hi - lo) / 2
+
+def find_new_full_moons(
+    start_utc: datetime,
+    end_utc: datetime,
+    step_hours: int = 6,
+    tol_seconds: int = 60,
+) -> list[tuple[str, datetime]]:
+    """
+    Returns list of ("Neumond"/"Vollmond", exact_dt_utc) within [start_utc, end_utc].
+    """
+    if start_utc.tzinfo is None or end_utc.tzinfo is None:
+        raise ValueError("start_utc/end_utc must be timezone-aware (UTC).")
+
+    events: list[tuple[str, datetime]] = []
+    step = timedelta(hours=step_hours)
+
+    targets = [("Neumond", 0.0), ("Vollmond", 180.0)]
+
+    t0 = start_utc
+    while t0 < end_utc:
+        t1 = min(t0 + step, end_utc)
+
+        for label, target in targets:
+            f0 = moon_phase_func(t0, target)
+            f1 = moon_phase_func(t1, target)
+
+            # sign change or endpoint near zero
+            if (f0 == 0.0) or (f1 == 0.0) or (f0 * f1 < 0):
+                try:
+                    exact = bisect_time_for_moon_phase(t0, t1, target, tol_seconds=tol_seconds)
+
+                    # Duplikate vermeiden (kann bei step klein passieren)
+                    if not events or abs((events[-1][1] - exact).total_seconds()) > 3600:
+                        events.append((label, exact))
+                except ValueError:
+                    pass
+
+        t0 = t1
+
+    events.sort(key=lambda x: x[1])
+    return events
+
 
 def parse_body_key(s: str) -> BodyKey | None:
     s = (s or "").lower().strip()
