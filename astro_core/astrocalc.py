@@ -72,6 +72,49 @@ BodyKey = Union[Body, str]
 def wrap180(x: float) -> float:
     return (x + 180.0) % 360.0 - 180.0
 
+def moon_elong_deg(dt_utc: datetime) -> float:
+    moon = _swe_lon(swe.MOON, dt_utc)
+    sun  = _swe_lon(swe.SUN, dt_utc)
+    return (moon - sun) % 360.0   # 0..360
+
+def unwrap_deg(prev: float, cur: float) -> float:
+    """
+    Adjust cur by +/-360 so that it stays close to prev (continuous series).
+    """
+    while cur - prev > 180.0:
+        cur -= 360.0
+    while cur - prev < -180.0:
+        cur += 360.0
+    return cur
+
+def bisect_time_for_elongation(
+    t0: datetime,
+    t1: datetime,
+    target: float,
+    e0: float,
+    e1: float,
+    tol_seconds: int = 60,
+) -> datetime:
+    lo, hi = t0, t1
+    elo, ehi = e0, e1
+
+    # target muss im Intervall liegen
+    if not (min(elo, ehi) <= target <= max(elo, ehi)):
+        raise ValueError("Target not bracketed")
+
+    while (hi - lo).total_seconds() > tol_seconds:
+        mid = lo + (hi - lo) / 2
+        em = moon_elong_deg(mid)
+        em = unwrap_deg(elo, em)
+
+        if min(elo, em) <= target <= max(elo, em):
+            hi, ehi = mid, em
+        else:
+            lo, elo = mid, em
+
+    return lo + (hi - lo) / 2
+
+
 def _swe_lon(body_ipl: int, dt_utc: datetime) -> float:
     jd = _jd_ut(dt_utc)
     xx, _ret = swe.calc_ut(jd, body_ipl, swe.FLG_SWIEPH)
@@ -125,40 +168,49 @@ def find_new_full_moons(
     step_hours: int = 6,
     tol_seconds: int = 60,
 ) -> list[tuple[str, datetime]]:
-    """
-    Returns list of ("Neumond"/"Vollmond", exact_dt_utc) within [start_utc, end_utc].
-    """
     if start_utc.tzinfo is None or end_utc.tzinfo is None:
         raise ValueError("start_utc/end_utc must be timezone-aware (UTC).")
 
     events: list[tuple[str, datetime]] = []
     step = timedelta(hours=step_hours)
 
+    # Targets in Grad
     targets = [("Neumond", 0.0), ("Vollmond", 180.0)]
 
     t0 = start_utc
+    e0 = moon_elong_deg(t0)
+
     while t0 < end_utc:
         t1 = min(t0 + step, end_utc)
+        e1 = moon_elong_deg(t1)
+        e1 = unwrap_deg(e0, e1)  # kontinuierlich machen
 
         for label, target in targets:
-            f0 = moon_phase_func(t0, target)
-            f1 = moon_phase_func(t1, target)
+            # Wir erlauben target auch als 360, falls wir über 0 laufen
+            candidates = [target]
+            if target == 0.0:
+                candidates.append(360.0)
 
-            # sign change or endpoint near zero
-            if (f0 == 0.0) or (f1 == 0.0) or (f0 * f1 < 0):
-                try:
-                    exact = bisect_time_for_moon_phase(t0, t1, target, tol_seconds=tol_seconds)
-
-                    # Duplikate vermeiden (kann bei step klein passieren)
-                    if not events or abs((events[-1][1] - exact).total_seconds()) > 3600:
+            for tgt in candidates:
+                if min(e0, e1) <= tgt <= max(e0, e1):
+                    try:
+                        exact = bisect_time_for_elongation(t0, t1, tgt, e0, e1, tol_seconds=tol_seconds)
+                        # normalisieren: target 360 -> Neumond(0)
                         events.append((label, exact))
-                except ValueError:
-                    pass
+                    except ValueError:
+                        pass
+                    break  # nicht beide (0 und 360) im selben Segment doppelt
 
-        t0 = t1
+        t0, e0 = t1, e1
 
+    # Duplikate (falls Step klein)
     events.sort(key=lambda x: x[1])
-    return events
+    dedup: list[tuple[str, datetime]] = []
+    for lbl, dt in events:
+        if not dedup or abs((dedup[-1][1] - dt).total_seconds()) > 2 * 3600:
+            dedup.append((lbl, dt))
+    return dedup
+
 
 
 def parse_body_key(s: str) -> BodyKey | None:
