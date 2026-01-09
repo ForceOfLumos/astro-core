@@ -410,6 +410,51 @@ def find_next_aspect_times(
 
     return hits
 
+def find_orb_window_tt(
+    p1_key: str,
+    p2_key: str,
+    aspect_angle: float,
+    start_utc: datetime,
+    orb_deg: float,
+    days_ahead: int = 365*2,
+    step_hours: int = 12,
+) -> tuple[datetime, datetime, datetime] | None:
+    end_utc = start_utc + timedelta(days=days_ahead)
+    step = timedelta(hours=step_hours)
+
+    t = start_utc
+    prev = aspect_delta_transit_transit_deg(p1_key, p2_key, aspect_angle, t)
+    in_orb = abs(prev) <= orb_deg
+    window_start = t if in_orb else None
+    exact = None
+
+    while t < end_utc:
+        t2 = t + step
+        cur = aspect_delta_transit_transit_deg(p1_key, p2_key, aspect_angle, t2)
+
+        cur_in = abs(cur) <= orb_deg
+
+        if (not in_orb) and cur_in:
+            window_start = t2
+            exact = None
+
+        if window_start is not None and exact is None:
+            if (prev <= 0 <= cur) or (cur <= 0 <= prev) or abs(cur) < 0.05:
+                exact = t2
+
+        if in_orb and (not cur_in) and window_start is not None:
+            window_end = t2
+            if exact is None:
+                exact = window_start + (window_end - window_start) / 2
+            return (window_start, exact, window_end)
+
+        t = t2
+        prev = cur
+        in_orb = cur_in
+
+    return None
+
+
 def find_orb_window(
     transit_body: Body,
     natal_lon: float,
