@@ -86,7 +86,12 @@ def unwrap_deg(prev: float, cur: float) -> float:
     while cur - prev < -180.0:
         cur += 360.0
     return cur
-
+    
+def aspect_delta_transit_transit_deg(p1_key: str, p2_key: str, aspect_angle: float, at_utc: datetime) -> float:
+    lon1 = ecliptic_lon_geocentric(parse_body_key(p1_key), at_utc)
+    lon2 = ecliptic_lon_geocentric(parse_body_key(p2_key), at_utc)
+    return angle_diff_signed(lon1, (lon2 + aspect_angle) % 360.0)
+    
 def bisect_time_for_elongation(
     t0: datetime,
     t1: datetime,
@@ -567,10 +572,9 @@ def default_search_params(transit_body) -> tuple[int, int]:
     return (365 * 90, 24)
 
 def angle_diff_signed(a: float, b: float) -> float:
-    """
-    Signed smallest difference a-b in degrees, range (-180, 180].
-    """
-    d = (a - b + 180.0) % 360.0 - 180.0
+    d = (a - b) % 360.0
+    if d > 180.0:
+        d -= 360.0
     return d
 
 def compute_houses(dt_utc: datetime, lat: float, lon: float, hsys: str = "P") -> tuple[list[float], dict[str, float]]:
