@@ -10,6 +10,8 @@ from .astrocalc import (
     fmt_angles,
     find_new_full_moons,
     find_orb_window_tt,
+    aspect_delta_transit_transit_deg,
+    aspect_delta_deg,
 )
 
 from .aspects import (
@@ -35,4 +37,6 @@ __all__ = [
     "fmt_angles",
     "find_new_full_moons",
     "find_orb_window_tt",
+    "aspect_delta_transit_transit_deg",
+    "aspect_delta_deg",
 ]
