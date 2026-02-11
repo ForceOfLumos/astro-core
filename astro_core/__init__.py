@@ -12,6 +12,7 @@ from .astrocalc import (
     find_orb_window_tt,
     aspect_delta_transit_transit_deg,
     aspect_delta_deg,
+    init_swisseph,
 )
 
 from .aspects import (
@@ -39,4 +40,5 @@ __all__ = [
     "find_orb_window_tt",
     "aspect_delta_transit_transit_deg",
     "aspect_delta_deg",
+    "init_swisseph",
 ]

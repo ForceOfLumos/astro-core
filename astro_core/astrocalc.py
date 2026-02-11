@@ -9,10 +9,7 @@ from astronomy import Time, Body, GeoVector, Ecliptic
 from typing import Dict
 
 
-# --- Swiss Ephemeris init ---
-SWEPH_PATH = os.getenv("SWEPH_PATH", "/app/ephe")
-swe.set_ephe_path(SWEPH_PATH)
-
+_SWEPH_INITIALIZED = False
 
 # --- Zodiac helpers ---
 SIGNS_DE = [
@@ -64,11 +61,30 @@ PLANET_SYMBOL = {
     Body.Uranus: "♅",
     Body.Neptune: "♆",
     Body.Pluto: "♇",
+    Body.Chiron: "⚷",
 }
 
 
 BodyKey = Union[Body, str]
 
+def init_swisseph(ephe_path: str | None = None) -> str:
+    """
+    Must be called once at process start.
+    Returns the effective ephemeris path.
+    """
+    global _SWEPH_INITIALIZED
+    if _SWEPH_INITIALIZED:
+        return swe.get_ephe_path()
+
+    path = ephe_path or os.getenv("SWEPH_PATH", "/app/ephe")
+    swe.set_ephe_path(path)
+    _SWEPH_INITIALIZED = True
+    return path
+
+def _calc_ut(jd_ut: float, body: int, flags: int):
+    init_swisseph()
+    return _calc_ut(jd_ut, body, flags)
+    
 def wrap180(x: float) -> float:
     return (x + 180.0) % 360.0 - 180.0
 
@@ -122,7 +138,7 @@ def bisect_time_for_elongation(
 
 def _swe_lon(body_ipl: int, dt_utc: datetime) -> float:
     jd = _jd_ut(dt_utc)
-    xx, _ret = swe.calc_ut(jd, body_ipl, swe.FLG_SWIEPH)
+    xx, _ret = _calc_ut(jd, body_ipl, swe.FLG_SWIEPH)
     return float(xx[0]) % 360.0
 
 def moon_phase_func(dt_utc: datetime, target_deg: float) -> float:
@@ -337,7 +353,7 @@ def ecliptic_lon_geocentric(body_or_key: BodyKey, dt_utc: datetime) -> float:
     else:
         raise ValueError(f"Unknown extra body key: {key}")
 
-    xx, _ret = swe.calc_ut(jd, ipl, swe.FLG_SWIEPH)
+    xx, _ret = _calc_ut(jd, ipl, swe.FLG_SWIEPH)
     return float(xx[0]) % 360.0
     
     
