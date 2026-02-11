@@ -10,6 +10,7 @@ from typing import Dict
 
 
 _SWEPH_INITIALIZED = False
+_SWEPH_EFFECTIVE_PATH = None
 
 # --- Zodiac helpers ---
 SIGNS_DE = [
@@ -68,16 +69,20 @@ BodyKey = Union[Body, str]
 
 def init_swisseph(ephe_path: str | None = None) -> str:
     """
-    Must be called once at process start.
-    Returns the effective ephemeris path.
+    Safe to call many times (idempotent).
+    Ensures SwissEph path is set before any calc_ut call.
     """
-    global _SWEPH_INITIALIZED
+    global _SWEPH_INITIALIZED, _SWEPH_EFFECTIVE_PATH
+
     if _SWEPH_INITIALIZED:
-        return swe.get_ephe_path()
+        # py-swisseph has no get_ephe_path(), so we return our stored path
+        return _SWEPH_EFFECTIVE_PATH or (ephe_path or os.getenv("SWEPH_PATH", "/app/ephe"))
 
     path = ephe_path or os.getenv("SWEPH_PATH", "/app/ephe")
     swe.set_ephe_path(path)
+
     _SWEPH_INITIALIZED = True
+    _SWEPH_EFFECTIVE_PATH = path
     return path
 
 def _calc_ut(jd_ut: float, body: int, flags: int):
