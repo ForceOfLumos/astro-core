@@ -61,7 +61,6 @@ PLANET_SYMBOL = {
     Body.Uranus: "♅",
     Body.Neptune: "♆",
     Body.Pluto: "♇",
-    Body.Chiron: "⚷",
 }
 
 
@@ -83,7 +82,7 @@ def init_swisseph(ephe_path: str | None = None) -> str:
 
 def _calc_ut(jd_ut: float, body: int, flags: int):
     init_swisseph()
-    return _calc_ut(jd_ut, body, flags)
+    return swe.calc_ut(jd_ut, body, flags)
     
 def wrap180(x: float) -> float:
     return (x + 180.0) % 360.0 - 180.0
