@@ -226,7 +226,7 @@ def find_new_full_moons(
                         pass
                     break  # nicht beide (0 und 360) im selben Segment doppelt
 
-        t0, e0 = t1, e1
+        t0, e0 = t1, e1 % 360.0
 
     # Duplikate (falls Step klein)
     events.sort(key=lambda x: x[1])
