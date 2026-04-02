@@ -86,7 +86,8 @@ def init_swisseph(ephe_path: str | None = None) -> str:
     return path
 
 def _calc_ut(jd_ut: float, body: int, flags: int):
-    init_swisseph()
+    path = _SWEPH_EFFECTIVE_PATH or os.getenv("SWEPH_PATH", "/app/ephe")
+    swe.set_ephe_path(path)
     return swe.calc_ut(jd_ut, body, flags)
     
 def wrap180(x: float) -> float:
