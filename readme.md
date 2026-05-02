@@ -1,4 +1,3 @@
-cat > /opt/astro-core/README.md <<'MD'
 # astro-core
 
 Astrological calculation core used by Force of Lumos projects.
@@ -8,7 +7,7 @@ This package provides:
 - Chiron and Lilith (Swiss Ephemeris via `pyswisseph`)
 - Aspect math helpers and search utilities (exact hits, orb windows)
 
-It is designed to be imported by a separate “app” layer (e.g., a Telegram bot, web app, etc.).
+It is designed to be imported by a separate "app" layer (e.g., a Telegram bot, web app, etc.).
 Keep your content/business logic in the app layer; keep ephemeris calculations here.
 
 ## Features
@@ -50,10 +49,13 @@ Example (Docker):
 
 ## Installation
 
-From Git
-- pip install "git+https://github.com/<ORG>/astro-core.git@main#egg=astro-core"
+```
+pip install "git+https://github.com/<ORG>/astro-core.git@main#egg=astro-core"
+```
 
 ## Quick example
+
+```python
 from datetime import datetime, timezone
 from astronomy import Body
 from astro_core import ecliptic_lon_geocentric, fmt_lon_sign
@@ -61,10 +63,28 @@ from astro_core import ecliptic_lon_geocentric, fmt_lon_sign
 dt = datetime(1991, 10, 31, 4, 0, tzinfo=timezone.utc)
 lon = ecliptic_lon_geocentric(Body.Sun, dt)
 print(fmt_lon_sign(lon))
+```
+
+## AGPL Section 13 — Source code for network users
+
+This software is used in a networked service (Telegram bot). In accordance with
+GNU Affero General Public License v3.0 Section 13, users interacting with the
+service over a network can obtain the corresponding source code via the
+`/source` command in the bot, or directly at:
+
+> https://github.com/<ORG>/astro-core
 
 ## License
 
-This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
+This project is licensed under the **GNU Affero General Public License v3.0 or later**
+(AGPL-3.0-or-later). See [LICENSE](LICENSE) for the full license text.
 
-Swiss Ephemeris is © Astrodienst AG. When using Swiss Ephemeris in a networked service,
-ensure you comply with applicable license terms.
+### Third-party dependencies
+
+| Package | License | Notes |
+|---|---|---|
+| [pyswisseph](https://github.com/astrorigin/pyswisseph) | AGPL-3.0 | Python binding for Swiss Ephemeris by Astrodienst AG |
+| [astronomy-engine](https://github.com/cosinekitty/astronomy) | MIT | Compatible with AGPL-3.0 |
+
+Swiss Ephemeris is © Astrodienst AG. `pyswisseph` is itself licensed under AGPL-3.0,
+which is the primary reason this project adopts the same license.
