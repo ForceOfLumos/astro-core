@@ -40,16 +40,12 @@ EXTRA_BODIES = {
     "lilith": "lilith_mean",
     "lilith_mean": "lilith_mean",
     "lilith_true": "lilith_true",
-    "node_mean": "node_mean",
-    "node_true": "node_true",
 }
 
 EXTRA_SYMBOL = {
     "chiron": "⚷",
     "lilith_mean": "⚸",
     "lilith_true": "⚸",
-    "node_mean": "☊",
-    "node_true": "☊",
 }
 
 # --- House system symbols / labels ---
@@ -309,10 +305,6 @@ def name_any(body_or_key: BodyKey) -> str:
         return "Lilith"
     if key == "lilith_true":
         return "Lilith (true)"
-    if key == "node_mean":
-        return "Mondknoten (mean)"
-    if key == "node_true":
-        return "Mondknoten (true)"
     return key
 
 
@@ -349,7 +341,7 @@ def ecliptic_lon_geocentric(body_or_key: BodyKey, dt_utc: datetime) -> float:
 
     Supports:
       - Astronomy Engine Body (Sun..Pluto, Moon)
-      - strings: "chiron", "lilith_mean", "lilith_true", "node_mean", "node_true"
+      - strings: "chiron", "lilith_mean", "lilith_true"
     """
     if dt_utc.tzinfo is None:
         raise ValueError("dt_utc must be timezone-aware (UTC).")
@@ -379,10 +371,6 @@ def ecliptic_lon_geocentric(body_or_key: BodyKey, dt_utc: datetime) -> float:
         ipl = swe.MEAN_APOG
     elif key == "lilith_true":
         ipl = swe.OSCU_APOG
-    elif key == "node_mean":
-        ipl = swe.MEAN_NODE
-    elif key == "node_true":
-        ipl = swe.TRUE_NODE
     else:
         raise ValueError(f"Unknown extra body key: {key}")
 
